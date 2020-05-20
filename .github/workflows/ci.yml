@@ -1,0 +1,38 @@
+---
+name: cicd
+on: 
+  - push
+env:
+  AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+jobs:
+  build-packages:
+    name: Build Packages
+    runs-on:
+      - build
+      #- linux
+      #- self-hosted
+      - ${{ matrix.distro }}
+      - ${{ matrix.arch }}
+    strategy:
+      matrix:
+        distro: [
+          # TODO: add back debian9
+          debian8, debian10,
+          centos7, centos8,
+          amazon2,
+          fedora31, fedora32
+        ]
+        arch: [ amd64 ]
+    steps:
+      - name: Checkout sources 
+        uses: actions/checkout@v2
+      - name: Build DEB packages
+        run: make deb
+        if: ${{ startsWith(matrix.distro, 'debian') || startsWith(matrix.distro, 'ubuntu') }}
+      - name: Build RPM packages
+        run: make rpm 
+        if: ${{ startsWith(matrix.distro, 'centos') || startsWith(matrix.distro, 'amazon') || startsWith(matrix.distro, 'fedora') }}
+      - name: Collect artifacts
+        run: repobuild/collect_artifacts.sh
