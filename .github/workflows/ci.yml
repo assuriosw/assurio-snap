@@ -1,11 +1,13 @@
 ---
-name: cicd
+name: ci
 on: 
   - push
+
 env:
   AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+
 jobs:
   build-packages:
     name: Build Packages
@@ -14,6 +16,7 @@ jobs:
       - self-hosted
       - ${{ matrix.distro }}
       - ${{ matrix.arch }}
+
     strategy:
       matrix:
         distro: [
@@ -23,6 +26,7 @@ jobs:
           fedora31, fedora32
         ]
         arch: [ amd64 ]
+
     steps:
       - name: Checkout sources 
         uses: actions/checkout@v2
@@ -30,21 +34,43 @@ jobs:
       - name: Build DEB packages
         if: ${{ startsWith(matrix.distro, 'debian') || startsWith(matrix.distro, 'ubuntu') }}
         run: make deb
+
       - name: Build RPM packages
         if: ${{ startsWith(matrix.distro, 'centos') || startsWith(matrix.distro, 'amazon') || startsWith(matrix.distro, 'fedora') }}
         run: make rpm
+
       - name: Collect artifacts
         run: repobuild/collect_artifacts.sh
+
       - name: Upload DEB artifacts
         if: ${{ startsWith(matrix.distro, 'debian') || startsWith(matrix.distro, 'ubuntu') }}
+
         run: repobuild/upload.sh
           --source repobuild/artifacts/
           --bucket artifacts.assur.io
           --target /linux/elastio-snap/$(git rev-parse --abbrev-ref HEAD)/${GITHUB_RUN_NUMBER}/deb
           --exclude *GPG-KEY
+
       - name: Upload RPM artifacts
         if: ${{ startsWith(matrix.distro, 'centos') || startsWith(matrix.distro, 'amazon') || startsWith(matrix.distro, 'fedora') }}
         run: repobuild/upload.sh
           --source repobuild/artifacts/
           --bucket artifacts.assur.io
-          --target /linux/elastio-snap/$(git rev-parse --abbrev-ref HEAD)/${GITHUB_RUN_NUMBER}/rpm 
+          --target /linux/elastio-snap/$(git rev-parse --abbrev-ref HEAD)/${GITHUB_RUN_NUMBER}/rpm
+
+  manifest:
+    name: Artifacts manifest
+    needs: build-packages
+    runs-on:
+      - build
+      - Linux
+
+    steps:
+      - name: Make manifest
+        run: echo ${DRONE_BUILD_NUMBER} >> latest
+
+      - name: Upload manifest
+        run: repobuild/upload.sh
+          --source latest
+          --bucket artifacts.assur.io
+          --target /linux/elastio-snap/${GITHUB_RUN_NUMBER}
