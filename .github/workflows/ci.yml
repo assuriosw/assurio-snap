@@ -42,7 +42,7 @@ jobs:
         run: repobuild/upload.sh
           --source repobuild/artifacts/
           --bucket artifacts.assur.io
-          --target /linux/elastio-snap/${DRONE_SOURCE_BRANCH}/${DRONE_BUILD_NUMBER}/deb
+          --target /linux/elastio-snap/$(git rev-parse --abbrev-ref HEAD)/${GITHUB_RUN_NUMBER}/deb
           --exclude *GPG-KEY
 #      - if: ${{ startsWith(matrix.distro, 'centos') || startsWith(matrix.distro, 'amazon') || startsWith(matrix.distro, 'fedora') }}
 #      - run: repobuild/upload.sh
