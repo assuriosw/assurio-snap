@@ -2,10 +2,6 @@
 name: cicd
 on: 
   - push
-env:
-  AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
 jobs:
   build-packages:
     name: Build Packages
@@ -28,11 +24,28 @@ jobs:
     steps:
       - name: Checkout sources 
         uses: actions/checkout@v2
+
       - name: Build DEB packages
-        run: make deb
         if: ${{ startsWith(matrix.distro, 'debian') || startsWith(matrix.distro, 'ubuntu') }}
+        run: make deb
       - name: Build RPM packages
-        run: make rpm 
         if: ${{ startsWith(matrix.distro, 'centos') || startsWith(matrix.distro, 'amazon') || startsWith(matrix.distro, 'fedora') }}
+        run: make rpm
       - name: Collect artifacts
         run: repobuild/collect_artifacts.sh
+      - name: Upload artifacts
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+        if: ${{ startsWith(matrix.distro, 'debian') || startsWith(matrix.distro, 'ubuntu') }}
+        run: repobuild/upload.sh
+          --source repobuild/artifacts/
+          --bucket artifacts.assur.io
+          --target /linux/elastio-snap/${DRONE_SOURCE_BRANCH}/${DRONE_BUILD_NUMBER}/deb
+          --exclude *GPG-KEY
+#      - if: ${{ startsWith(matrix.distro, 'centos') || startsWith(matrix.distro, 'amazon') || startsWith(matrix.distro, 'fedora') }}
+#      - run: repobuild/upload.sh
+#          --source repobuild/artifacts/
+#          --bucket artifacts.assur.io
+#          --target /linux/elastio-snap/${DRONE_SOURCE_BRANCH}/${DRONE_BUILD_NUMBER}/rpm
