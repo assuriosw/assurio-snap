@@ -11,15 +11,14 @@ jobs:
     name: Build Packages
     runs-on:
       - build
-      #- linux
-      #- self-hosted
+      - self-hosted
       - ${{ matrix.distro }}
       - ${{ matrix.arch }}
     strategy:
       matrix:
         distro: [
           debian8, debian9, debian10,
-          centos7, #centos8,
+          centos7, centos8,
           amazon2,
           fedora31, fedora32
         ]
