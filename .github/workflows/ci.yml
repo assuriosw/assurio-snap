@@ -2,6 +2,10 @@
 name: cicd
 on: 
   - push
+env:
+  AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
 jobs:
   build-packages:
     name: Build Packages
@@ -33,19 +37,16 @@ jobs:
         run: make rpm
       - name: Collect artifacts
         run: repobuild/collect_artifacts.sh
-      - name: Upload artifacts
-        env:
-          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
-      - run: repobuild/upload.sh
+      - name: Upload DEB artifacts
+        if: ${{ startsWith(matrix.distro, 'debian') || startsWith(matrix.distro, 'ubuntu') }}
+        run: repobuild/upload.sh
           --source repobuild/artifacts/
           --bucket artifacts.assur.io
           --target /linux/elastio-snap/$(git rev-parse --abbrev-ref HEAD)/${GITHUB_RUN_NUMBER}/deb
           --exclude *GPG-KEY
-      - if: ${{ startsWith(matrix.distro, 'debian') || startsWith(matrix.distro, 'ubuntu') }}
-      - run: repobuild/upload.sh
+      - name: Upload RPM artifacts
+        if: ${{ startsWith(matrix.distro, 'centos') || startsWith(matrix.distro, 'amazon') || startsWith(matrix.distro, 'fedora') }}
+        run: repobuild/upload.sh
           --source repobuild/artifacts/
           --bucket artifacts.assur.io
-          --target /linux/elastio-snap/$(git rev-parse --abbrev-ref HEAD)/${GITHUB_RUN_NUMBER}/rpm
-      - if: ${{ startsWith(matrix.distro, 'centos') || startsWith(matrix.distro, 'amazon') || startsWith(matrix.distro, 'fedora') }}
+          --target /linux/elastio-snap/$(git rev-parse --abbrev-ref HEAD)/${GITHUB_RUN_NUMBER}/rpm 
