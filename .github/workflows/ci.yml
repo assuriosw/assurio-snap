@@ -18,9 +18,8 @@ jobs:
     strategy:
       matrix:
         distro: [
-          # TODO: add back debian9
-          debian8, debian10,
-          #centos7, centos8,
+          debian8, debian9, debian10,
+          centos7, #centos8,
           amazon2,
           fedora31, fedora32
         ]
