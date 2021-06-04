@@ -3408,12 +3408,36 @@ static int __tracer_should_reset_mrf(const struct snap_device *dev){
 	return 1;
 }
 
+static int __sync_fs(struct super_block *sb, char *bdev_name){
+	int ret = 0;
+	if(sb->s_op->sync_fs){
+		ret = sb->s_op->sync_fs(sb, 1);
+		if(ret){
+			LOG_ERROR((ret), "error syncing fs for '%s': error", bdev_name);
+			elastio_snap_drop_super(sb);
+		}
+	}
+	return ret;
+}
+
+static int __freeze_fs(struct super_block *sb, char *bdev_name){
+	int ret = 0;
+	if(sb->s_op->freeze_fs && sb->s_op->unfreeze_fs){
+		ret = sb->s_op->freeze_fs(sb);
+		if(ret){
+			LOG_ERROR((ret), "error freezeng fs for '%s': error", bdev_name);
+			elastio_snap_drop_super(sb);
+		}
+	}
+	return ret;
+}
+
 static int __tracer_transition_tracing(struct snap_device *dev, struct block_device *bdev, make_request_fn *new_mrf, struct snap_device **dev_ptr){
 	int ret;
 	struct super_block *origsb = elastio_snap_get_super(bdev);
+	char fs_frozen = 0;
 #ifndef HAVE_FREEZE_SUPER
 	struct super_block *sb = NULL;
-	char fs_frozen = 0;
 #endif
 	char bdev_name[BDEVNAME_SIZE];
 	MAYBE_UNUSED(ret);
@@ -3425,31 +3449,34 @@ static int __tracer_transition_tracing(struct snap_device *dev, struct block_dev
 		LOG_DEBUG("freezing '%s' with filesystem '%s'", bdev_name, origsb->s_type->name);
 #ifdef HAVE_FREEZE_SUPER
 //#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)
-		ret = freeze_super(origsb);
-		if(ret){
-			LOG_ERROR((ret), "error freezing super for '%s': error", bdev_name);
-			elastio_snap_drop_super(origsb);
-			return ret;
+		// xfs v.4 doesn't sync fs in the freeze_super function
+		// also, doing freeze_super call after the freeze_fs leads to the hung time to time
+		// so, freeze fs and do not freeze super is a solution for the fs-consistent xfs snapshots
+		if(strcmp(origsb->s_type->name, "xfs") == 0){
+			ret = __sync_fs(origsb, bdev_name);
+			if(ret) return ret;
+			ret = __freeze_fs(origsb, bdev_name);
+			if(ret) return ret;
+			fs_frozen = 1;
+		}else{
+			ret = freeze_super(origsb);
+			if(ret){
+				LOG_ERROR((ret), "error freezing super for '%s': error", bdev_name);
+				elastio_snap_drop_super(origsb);
+				return ret;
+			}
 		}
 #else
 		// ext2 doesn't have freeze_fs func in the super_operations
 		// but at least sync_fs with wait makes fs consistent in the snapshot
-		if(strcmp(origsb->s_type->name, "ext2") == 0 && origsb->s_op->sync_fs){
-			ret = origsb->s_op->sync_fs(origsb, 1);
-			if(ret){
-				LOG_ERROR((ret), "error syncing fs for '%s': error", bdev_name);
-				elastio_snap_drop_super(origsb);
-				return ret;
-			}
-		}else if(strcmp(origsb->s_type->name, "xfs") == 0 && origsb->s_op->freeze_fs && origsb->s_op->unfreeze_fs){
+		if(strcmp(origsb->s_type->name, "ext2") == 0){
+			ret = __sync_fs(origsb, bdev_name);
+			if(ret) return ret;
+		}else if(strcmp(origsb->s_type->name, "xfs") == 0){
 		// xfs v.3 doesn't sync and freeze fs in the freeze_bdev function
 		// so, doing so explictely before the freeze_bdev call
-			ret = origsb->s_op->freeze_fs(origsb);
-			if(ret){
-				LOG_ERROR((ret), "error freezing fs for '%s': error", bdev_name);
-				elastio_snap_drop_super(origsb);
-				return ret;
-			}
+			ret = __freeze_fs(origsb, bdev_name);
+			if(ret) return ret;
 			fs_frozen = 1;
 		}
 
@@ -3491,19 +3518,21 @@ static int __tracer_transition_tracing(struct snap_device *dev, struct block_dev
 	if(origsb){
 		//thaw the block device
 		LOG_DEBUG("thawing '%s'", bdev_name);
-#ifndef HAVE_FREEZE_SUPER
+//#ifndef HAVE_FREEZE_SUPER
 		if(fs_frozen){
 			ret = origsb->s_op->unfreeze_fs(origsb);
-			if(ret)
-				LOG_ERROR(ret, "error thawing filesystem on '%s'", bdev_name);
+			if(ret) LOG_ERROR(ret, "error thawing filesystem on '%s'", bdev_name);
 		}
-#endif
+//#endif
 #ifndef HAVE_THAW_BDEV_INT
 //#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,29)
 		thaw_bdev(bdev, sb);
 #else
 #ifdef HAVE_FREEZE_SUPER
-		ret = thaw_super(origsb);
+		// super isn't frosen for xfs, thaw it for any fs except xfs
+		if(strcmp(origsb->s_type->name, "xfs") != 0){
+			ret = thaw_super(origsb);
+		}
 #else
 		ret = thaw_bdev(bdev, sb);
 #endif
